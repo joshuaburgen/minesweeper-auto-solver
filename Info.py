@@ -6,7 +6,7 @@ LOG_FLAG: str = 'FLAGGING'
 LOG_REVEAL: str = 'REVEALING'
 LOG_REVEAL_RANDOM: str = 'REVEALING RANDOM'
 LOG_GAME_RESET: str = '\n---------------------RESETTING GAME------------------------------\n\n\n'
-LOG_GAME_COMPLETE: str = 'GAME SHOULD BE COMPLETE'
+LOG_GAME_COMPLETE: str = 'All cells accounted for (game victory indicator not verified).'
 REPS: dict = {'square blank': '_',
               'square bombflagged': 'f',
               'square open0': 0,

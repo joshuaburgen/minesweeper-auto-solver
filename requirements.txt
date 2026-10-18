@@ -1,0 +1,4 @@
+pillow
+numpy
+pywin32; sys_platform == 'win32'
+selenium>=4.20,<5

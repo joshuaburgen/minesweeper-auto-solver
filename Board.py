@@ -3,13 +3,16 @@ import time
 import Info
 import random
 from Cell import Cell
-from selenium import webdriver
-from selenium.webdriver.remote.webelement import WebElement
+
+
+class GameLost(RuntimeError):
+    """A confirmed mine hit, distinct from recognition or input failures."""
+    pass
 
 
 # returns one random element from the given set
 def get_one_random(s: set):
-    return random.sample(s, 1)[0]
+    return random.choice(tuple(s))
 
 
 # represents a MineSweeper Board
@@ -22,31 +25,31 @@ class Board:
                      'complete': Info.LOG_GAME_COMPLETE}
 
     # constructor
-    def __init__(self, difficulty: int = 3, log: bool = True, mark_flags: bool = False) -> None:
+    def __init__(self, platform, log: bool = True, mark_flags: bool = False,
+                 check=None) -> None:
 
         start_t = time.time()
 
-        if not 1 <= difficulty <= 3:
-            raise Exception('Difficulty should be in range [1, 3]')
-
-        # define dimensions
-        rows, cols, mines, link = Info.DIFFICULTIES[difficulty - 1]
-        driver: webdriver = webdriver.Chrome(os.path.join(os.getcwd(), 'chromedriver'))
-        driver.get(link)
+        # the platform supplies the dimensions and all I/O (web or Arbiter)
+        self.platform = platform
+        self.check = check or (lambda: None)
+        self.won = False
 
         # assign fields
         self.log: bool = log
         self.mark_flags: bool = mark_flags
-        self.rows: int = rows
-        self.cols: int = cols
-        self.mines: int = mines
+        self.rows: int = platform.rows
+        self.cols: int = platform.cols
+        self.mines: int = platform.mines
         self.blank: set = set()
         self.bombs: set = set()
         self.numbers: set = set()
         self.workset: set = set()
         self.matrix: list = list()
-        self.driver: webdriver = driver
-        self.face: WebElement = driver.find_element_by_id('face')
+
+        # let the platform snapshot the board before the first read cycle
+        if hasattr(self.platform, 'begin_read'):
+            self.platform.begin_read()
 
         # initialize fields and cells todo is this a good idea to call this here?
         self.init_fields_and_cells()
@@ -55,7 +58,8 @@ class Board:
 
     # main game loop
     def play(self) -> None:
-        while not len(self.blank) == 0:
+        while self.blank and not self.won:
+            self.check()
             to_flag: set = self.get_cells_to_flag()
             if not len(to_flag) == 0:
                 self.log_action('flag')
@@ -68,16 +72,15 @@ class Board:
                 else:
                     self.log_action('random')
                     self.reveal_random()
-
-        # todo remove later
-        while True:
-            x = 1
+        self.log_action('Game victory verified.' if self.won else 'complete')
 
     # resets the board's sets and cells
     def reset_game(self) -> None:
         self.log_action('reset')
-        # click face to restart the game
-        self.face.click()
+        # start a brand new game on the platform
+        self.platform.reset()
+        if hasattr(self.platform, 'begin_read'):
+            self.platform.begin_read()
         # clear sets
         self.blank.clear()
         self.bombs.clear()
@@ -109,6 +112,8 @@ class Board:
                     random_cell = get_one_random(blank)
         random_cell.click()
         self.update_from({random_cell})
+        if random_cell.blank and not self.won:
+            raise RuntimeError('Click did not reveal the cell; check capture, geometry and focus.')
 
     # initialize the board's matrix, blank set with cells
     def init_fields_and_cells(self) -> None:
@@ -116,7 +121,7 @@ class Board:
         for row in range(self.rows):
             row_to_add: list = []
             for col in range(self.cols):
-                cell: Cell = Cell(row, col, self.driver)
+                cell: Cell = Cell(row, col, self.platform)
                 row_to_add.append(cell)
                 self.blank.add(cell)
             self.matrix.append(row_to_add)
@@ -134,8 +139,18 @@ class Board:
 
     # flags all cells in the given set
     def flag_all(self, to_flag: set) -> None:
+        batched = self.mark_flags and hasattr(self.platform, 'flag_cells')
+        if batched:
+            self.check()
+            self.platform.flag_cells([(c.posn.row, c.posn.col) for c in to_flag])
         for cell in to_flag:
-            cell.flag(self.mark_flags)
+            self.check()
+            if self.mark_flags:
+                if not batched:
+                    self.platform.flag_cell(cell.posn.row, cell.posn.col)
+                if self.platform.read_cell(cell.posn.row, cell.posn.col) != 'square bombflagged':
+                    raise RuntimeError('Flag was not observed; stopping to avoid incorrect moves.')
+            cell.flag(False)
             self.blank.discard(cell)
             self.bombs.add(cell)
 
@@ -143,15 +158,22 @@ class Board:
     def update_from(self, workset: set) -> None:
         start_time = time.time()
         counter: int = 0
+        if hasattr(self.platform, 'begin_read'):
+            self.platform.begin_read()
+        if hasattr(self.platform, 'game_won') and self.platform.game_won():
+            self.won = True
+            return
+        if hasattr(self.platform, 'game_lost') and self.platform.game_lost():
+            raise GameLost('Hit a mine.')
         visited: set = set()
         while not len(workset) == 0:
+            self.check()
             popped: Cell = workset.pop()
             if popped not in visited:
                 visited.add(popped)
                 updated, boom = popped.update()
                 if boom:
-                    self.reset_game()
-                    return
+                    raise GameLost('Hit a mine.')
                 elif updated:
                     workset |= popped.blank_neighbors()
                     self.blank.discard(popped)
@@ -163,22 +185,23 @@ class Board:
 
     # reveals all cells in the given set
     def reveal_all(self, to_reveal: set) -> None:
-
-        if len(to_reveal) == len(self.blank):
-            for cell in to_reveal:
-                # todo the only issue here is if one cell is pressed and it reveals
-                #  the rest, then the alert is raised and we get an error, might want
-                #  to check in click if alert is present
-                cell.click()
-                self.blank.discard(cell)
-                self.numbers.add(cell)
-            self.log_action('complete')
-        else:
-            to_update: set = set()
-            for cell in to_reveal:
-                cell.click()
-                to_update.add(cell)
-            self.update_from(to_update)
+        if hasattr(self.platform, 'reveal_cells'):
+            self.check()
+            self.platform.reveal_cells([(c.posn.row, c.posn.col) for c in to_reveal if c.blank])
+            self.update_from(set(to_reveal))
+            if not self.won and any(c.blank for c in to_reveal):
+                raise RuntimeError('Click did not reveal the cell; check browser input.')
+            return
+        for cell in to_reveal:
+            self.check()
+            if self.won:
+                break
+            if not cell.blank:  # an earlier click may have flood-revealed it
+                continue
+            cell.click()
+            self.update_from({cell})
+            if cell.blank and not self.won:
+                raise RuntimeError('Click did not reveal the cell; check capture, geometry and focus.')
 
     # returns a set of cells to flag
     def get_cells_to_flag(self) -> set:

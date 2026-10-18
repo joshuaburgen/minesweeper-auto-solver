@@ -1,8 +1,5 @@
 import Info
 from Posn import Posn
-from selenium import webdriver
-from selenium.webdriver import ActionChains
-from selenium.webdriver.remote.webelement import WebElement
 
 
 # represents a cell on the MineSweeper board
@@ -11,7 +8,7 @@ class Cell:
     ATTRIBUTES: dict = Info.REPS
 
     # constructor
-    def __init__(self, row: int, col: int, driver: webdriver) -> None:
+    def __init__(self, row: int, col: int, platform) -> None:
         self.bomb: bool = False
         self.blank: bool = True
         self.number: bool = False
@@ -19,8 +16,10 @@ class Cell:
         self.cell_integer: int = -1
         self.posn: Posn = Posn(row, col)
         self.neighbors: set = set()
-        self.driver: webdriver = driver
-        self.pointer: WebElement = driver.find_element_by_id(f'{row + 1}_{col + 1}')
+        # a Platform knows how to read / click / flag this cell; it replaces
+        # the old selenium driver + WebElement so the exact same reasoning
+        # logic can drive either the web game or the desktop Arbiter.
+        self.platform = platform
 
     # sets the neighbors of this cell (only once)
     def assign_neighbors(self, neighbors: set) -> None:
@@ -37,7 +36,7 @@ class Cell:
             self.bomb = True
             self.blank = False
             if mark_flags:
-                ActionChains(self.driver).context_click(self.pointer).perform()
+                self.platform.flag_cell(self.posn.row, self.posn.col)
 
     # converts this cell from blank to a number cell
     def to_number(self) -> None:
@@ -56,15 +55,12 @@ class Cell:
         self.number = False
         self.attribute = 'square blank'
 
-    # clicks on the web element of this cell
+    # clicks on this cell to reveal it
     def click(self) -> None:
         if not self.blank:
             raise NotImplementedError
         else:
-            try:
-                self.pointer.click()
-            except Exception as ex:
-                raise ex
+            self.platform.click_cell(self.posn.row, self.posn.col)
 
     # returns a set of bomb neighbors
     def bomb_neighbors(self) -> set:
@@ -136,13 +132,10 @@ class Cell:
         else:
             return str(self.cell_integer)
 
-    # updates the attribute of this cell
+    # updates the attribute of this cell by reading it from the platform
     def update_attribute(self) -> str:
-        try:
-            self.attribute = self.pointer.get_attribute('class')
-            return self.attribute
-        except Exception as ex:
-            raise ex
+        self.attribute = self.platform.read_cell(self.posn.row, self.posn.col)
+        return self.attribute
 
     # has this cell changed its attribute and was there an explosion?
     def update(self) -> tuple:
@@ -154,7 +147,11 @@ class Cell:
             if current_attribute != new_attribute:
                 self.attribute = new_attribute
                 if new_attribute not in self.ATTRIBUTES.keys():
-                    return False, True
+                    if 'bomb' in new_attribute and 'unknown' not in new_attribute:
+                        return False, True
+                    raise RuntimeError(f'Unrecognized cell state: {new_attribute!r}; stopped.')
+                elif new_attribute == 'square bombflagged':
+                    raise RuntimeError('Unexpected existing flag; start a fresh game.')
                 else:
                     self.to_number()
                     return True, False

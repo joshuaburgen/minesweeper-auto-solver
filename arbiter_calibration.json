@@ -1,0 +1,22 @@
+{
+  "difficulty": 3,
+  "rows": 16,
+  "cols": 30,
+  "mines": 99,
+  "geometry": {
+    "x0": 15,
+    "y0": 86,
+    "cell_w": 16,
+    "cell_h": 16
+  },
+  "skin": {
+    "empty_grey": 192,
+    "bevel_bright": 200,
+    "bevel_delta": 40,
+    "red_min": 140,
+    "red_dom": 50,
+    "boom_frac": 0.5,
+    "flag_frac": 0.04,
+    "bg_dist": 60
+  }
+}
