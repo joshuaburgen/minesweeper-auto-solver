@@ -6,11 +6,76 @@ from run_control import RunControl, StopRequested
 from arbiter_window import ArbiterWindow
 from arbiter_platform import ArbiterPlatform
 from arbiter_geometry import BoardGeometry
-from Board import Board
+from Board import Board, GameLost
 from test_board_platform import build_platform
 
 
 class TestRunSafety(unittest.TestCase):
+    @patch('Runner.time.sleep')
+    @patch('Runner.RunControl')
+    @patch('Runner.Board')
+    @patch('arbiter_platform.ArbiterPlatform')
+    def test_desktop_retry_shares_timer_and_has_no_default_countdown(self, platform_type, board_type,
+                                                                  control_type, sleep):
+        from Runner import main
+        lost, won = Mock(), Mock(won=False)
+        lost.play.side_effect = GameLost('Hit a mine.')
+        board_type.side_effect = [lost, won]
+        self.assertEqual(main(['--platform', 'arbiter', '--difficulty', '3',
+                               '--seconds', '10', '--retry-on-loss']), 0)
+        platform_type.return_value.reset.assert_called_once()
+        self.assertEqual(board_type.call_count, 2)
+        self.assertEqual(control_type.call_count, 1)
+        self.assertEqual(control_type.call_args.args[0], 10)
+        sleep.assert_not_called()
+
+    @patch('Runner.RunControl')
+    @patch('Runner.Board')
+    @patch('arbiter_platform.ArbiterPlatform')
+    def test_desktop_timeout_after_loss_prevents_restart(self, platform_type, board_type, control_type):
+        from Runner import main
+        board_type.return_value.play.side_effect = GameLost('Hit a mine.')
+        control_type.return_value.check.side_effect = [None, None, StopRequested('Time limit')]
+        self.assertEqual(main(['--platform', 'arbiter', '--retry-on-loss']), 0)
+        platform_type.return_value.reset.assert_not_called()
+
+    @patch('win32api.keybd_event')
+    def test_desktop_reset_checks_focus_and_validates_fresh_game(self, key_event):
+        window = Mock()
+        control = Mock()
+        platform = ArbiterPlatform(window=window, control=control,
+                                   geometry=BoardGeometry(0, 0, 16, 16), use_saved=False)
+        platform.calibrate = Mock()
+        platform.validate_fresh_board = Mock()
+        window.focus.reset_mock()
+        platform.reset()
+        self.assertEqual(key_event.call_count, 2)
+        control.wait.assert_called_once()
+        platform.calibrate.assert_not_called()
+        platform.validate_fresh_board.assert_called_once()
+        window.focus.assert_not_called()
+
+    @patch('win32api.keybd_event')
+    def test_desktop_reset_focus_loss_blocks_f2(self, key_event):
+        window = Mock()
+        platform = ArbiterPlatform(window=window, geometry=BoardGeometry(0, 0, 16, 16),
+                                   use_saved=False)
+        window.check_input.side_effect = StopRequested('Lost focus')
+        with self.assertRaises(StopRequested):
+            platform.reset()
+        key_event.assert_not_called()
+
+    @patch('win32api.keybd_event')
+    def test_stop_during_reset_wait_prevents_further_capture(self, key_event):
+        control = Mock()
+        control.wait.side_effect = StopRequested('Esc')
+        platform = ArbiterPlatform(window=Mock(), control=control,
+                                   geometry=BoardGeometry(0, 0, 16, 16), use_saved=False)
+        platform.calibrate = Mock()
+        with self.assertRaises(StopRequested):
+            platform.reset()
+        platform.calibrate.assert_not_called()
+
     @patch('arbiter_window.ImageGrab.grab')
     def test_capture_uses_physical_client_pixels(self, grab):
         from PIL import Image

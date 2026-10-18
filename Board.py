@@ -53,6 +53,8 @@ class Board:
 
         # initialize fields and cells todo is this a good idea to call this here?
         self.init_fields_and_cells()
+        if hasattr(self.platform, 'start_game'):
+            self.platform.start_game()
         self.log_action(f'\t{round(time.time() - start_t, 3)} seconds to initialize '
                         + f'a board with {self.rows * self.cols} cells')
 
@@ -153,6 +155,11 @@ class Board:
             cell.flag(False)
             self.blank.discard(cell)
             self.bombs.add(cell)
+        self._report_progress()
+
+    def _report_progress(self):
+        if hasattr(self.platform, 'note_progress'):
+            self.platform.note_progress(self.rows * self.cols - len(self.blank))
 
     # updates the cells from a set of cells
     def update_from(self, workset: set) -> None:
@@ -182,6 +189,7 @@ class Board:
                         self.workset.add(popped)
                     counter += 1
         self.log_action(f'\t{round(time.time() - start_time, 3)} seconds to update {counter} cells')
+        self._report_progress()
 
     # reveals all cells in the given set
     def reveal_all(self, to_reveal: set) -> None:

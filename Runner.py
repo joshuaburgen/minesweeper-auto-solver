@@ -13,20 +13,27 @@ def main(argv=None):
     parser.add_argument('--platform', choices=('arbiter', 'web'), default='arbiter')
     parser.add_argument('--difficulty', type=int, choices=(1, 2, 3), default=3)
     parser.add_argument('--seconds', type=float, help='play time limit (web: 180s; arbiter: 15s)')
-    parser.add_argument('--delay', type=int, default=3, help='countdown before starting')
-    parser.add_argument('--settle', type=float, help='delay after each move (web: 0s; arbiter: 0.15s)')
+    parser.add_argument('--delay', type=int, default=0, help='countdown before starting (default: 0)')
+    parser.add_argument('--settle', type=float, help='settling delay (web: 0s; arbiter batch: 0.02s)')
+    parser.add_argument('--target-seconds', type=float,
+                        help='approximate per-game pacing target; not a time limit or win guarantee')
     parser.add_argument('--show-browser', action='store_true', help='show the web browser')
     parser.add_argument('--web-input', choices=('events', 'webdriver'), default='events')
     parser.add_argument('--quiet', action='store_true', help='omit per-move logs')
     parser.add_argument('--retry-on-loss', action='store_true',
-                        help='web only: start a new game after a mine hit, within the total time limit')
+                        help='start a new game after a mine hit, within the total time limit')
+    parser.add_argument('--score-name', help='web only: submit this name via the victory score prompt')
     args = parser.parse_args(argv)
-    if args.retry_on_loss and args.platform != 'web':
-        parser.error('--retry-on-loss is only available with --platform web')
+    if args.target_seconds is not None and (not math.isfinite(args.target_seconds) or args.target_seconds <= 0):
+        parser.error('--target-seconds requires a finite positive value')
+    if args.score_name is not None:
+        args.score_name = args.score_name.strip()
+        if args.platform != 'web' or not 1 <= len(args.score_name) <= 25:
+            parser.error('--score-name requires web mode and a name of 1 to 25 characters')
     if args.seconds is None:
         args.seconds = 180 if args.platform == 'web' else 15
     if args.settle is None:
-        args.settle = 0 if args.platform == 'web' else 0.15
+        args.settle = 0 if args.platform == 'web' else 0.02
     if (not math.isfinite(args.seconds) or not math.isfinite(args.settle)
             or args.seconds <= 0 or args.delay < 0 or args.settle < 0):
         parser.error('seconds must be positive; delay and settle must be nonnegative')
@@ -37,6 +44,8 @@ def main(argv=None):
     try:
         mode = 'Retry on mine hits' if args.retry_on_loss else 'One game only'
         print(f'{mode}; total play time limit: {args.seconds:g}s.', flush=True)
+        if args.target_seconds:
+            print(f'Per-game target pace: about {args.target_seconds:g}s; not a win guarantee.', flush=True)
         if args.platform == 'arbiter':
             print('STOP: Esc, mouse to top-left corner, or switch away from Arbiter.', flush=True)
             print('Use a fresh board matching --difficulty. The system mouse WILL move.', flush=True)
@@ -55,13 +64,14 @@ def main(argv=None):
         if args.platform == 'arbiter':
             from arbiter_platform import ArbiterPlatform
             platform = ArbiterPlatform(difficulty=args.difficulty, settle=args.settle,
-                                       use_saved=False, control=control)
+                                       use_saved=False, control=control, target_seconds=args.target_seconds)
             platform.validate_fresh_board()
         else:
             from web_platform import WebPlatform
             platform = WebPlatform(difficulty=args.difficulty,
                                    headless=not args.show_browser, control=control,
-                                   settle=args.settle, input_mode=args.web_input)
+                                   settle=args.settle, input_mode=args.web_input, score_name=args.score_name,
+                                   target_seconds=args.target_seconds)
             control.check()
             control.close()
             control = RunControl(args.seconds)
@@ -85,6 +95,8 @@ def main(argv=None):
                 continue
             if args.quiet:
                 print('Game victory verified.' if board.won else 'All cells accounted for.', flush=True)
+            if args.score_name and board.won:
+                platform.finish_score_submission()
             break
         return 0
     except (StopRequested, KeyboardInterrupt) as exc:

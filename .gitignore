@@ -1,4 +1,27 @@
-.git
-.idea
-/venv
-__pycache__
+# Local Python environments and caches
+/.venv/
+/venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Editor settings
+.idea/
+.vscode/
+
+# Machine-specific calibration and generated results
+/arbiter_calibration.json
+/arbiter_diagnostic/
+/web_result.png
+/diagnostics
+/chromedriver
+
+# Arbiter runtime state and personal replays
+/arbiter/arbiter.dat
+/arbiter/diagnostics
+/arbiter/_debug_protocol_last.txt
+/arbiter/textstats.csv
+/arbiter/INDEX.GID
+/arbiter/stats*.dat
+/arbiter/*.avf
+/arbiter/replays/

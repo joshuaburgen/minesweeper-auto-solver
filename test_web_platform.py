@@ -6,9 +6,110 @@ from Board import Board, GameLost
 from run_control import StopRequested
 from test_board_platform import build_platform
 from web_platform import WebPlatform
+from game_pacer import GamePacer
 
 
 class TestWebPlatform(TestCase):
+    @patch('Runner.RunControl')
+    @patch('Runner.Board')
+    @patch('web_platform.WebPlatform')
+    def test_web_accepts_target_time_without_replacing_total_limit(self, platform_type, board_type, control_type):
+        from Runner import main
+        self.assertEqual(main(['--platform', 'web', '--target-seconds', '35', '--seconds', '399']), 0)
+        self.assertEqual(platform_type.call_args.kwargs['target_seconds'], 35)
+        self.assertEqual([call.args[0] for call in control_type.call_args_list], [60, 399])
+
+    def test_web_target_spreads_flags_over_individual_clicks(self):
+        platform = WebPlatform.__new__(WebPlatform)
+        platform._rows, platform._cols = 2, 2
+        platform.settle = 0
+        platform.input_mode = 'events'
+        platform.control = Mock()
+        platform.driver = Mock()
+        now, times = [0], []
+        def wait(seconds):
+            now[0] += seconds
+        platform.control.wait.side_effect = wait
+        platform.pacer = GamePacer(35, 4, platform.control, clock=lambda: now[0])
+        cells = {key: 'square blank' for key in ['1_1', '1_2', '2_1', '2_2']}
+        cells['0_0'] = 'square open0'  # hidden sentinel cells are not progress
+        platform._snapshot = {'face': 'facesmile', 'cells': cells.copy()}
+        def execute(script, positions, flag):
+            self.assertEqual(len(positions), 1)
+            times.append(now[0])
+            row, col = positions[0]
+            cells[f'{row + 1}_{col + 1}'] = 'square bombflagged'
+            return {'face': 'facesmile', 'cells': cells.copy()}
+        platform.driver.execute_script.side_effect = execute
+        platform.flag_cells([(0, 0), (0, 1), (1, 0)])
+        self.assertEqual(len(times), 3)
+        self.assertTrue(all(0 < b - a <= 0.5 for a, b in zip(times, times[1:])))
+        self.assertEqual(platform.pacer.progress, 3)
+
+    def test_each_web_attempt_uses_current_control_and_resets_pacing(self):
+        platform = WebPlatform.__new__(WebPlatform)
+        platform._rows, platform._cols = 2, 2
+        platform.target_seconds = 35
+        platform.control = Mock()
+        platform.start_game()
+        previous = platform.pacer
+        previous.note_progress(3)
+        platform.start_game()
+        self.assertIsNot(platform.pacer, previous)
+        self.assertIs(platform.pacer.control, platform.control)
+        self.assertEqual(platform.pacer.progress, 0)
+        platform.control.start.assert_not_called()
+
+    def test_web_pacing_stop_prevents_browser_input(self):
+        platform = WebPlatform.__new__(WebPlatform)
+        platform.control = Mock()
+        platform.control.wait.side_effect = StopRequested('Time limit')
+        platform.driver = Mock()
+        platform.pacer = GamePacer(35, 4, platform.control)
+        platform._snapshot = {'face': 'facesmile', 'cells': {'1_1': 'square blank'}}
+        with self.assertRaises(StopRequested):
+            platform._event_batch([(0, 0)])
+        platform.driver.execute_script.assert_not_called()
+
+    def test_score_prompt_uses_requested_name(self):
+        platform = WebPlatform.__new__(WebPlatform)
+        platform.score_name = 'JoshuaBurgenGax'
+        platform.driver = Mock()
+        alert = platform.driver.switch_to.alert
+        alert.text = 'Please enter your name to submit your score (1)'
+        self.assertTrue(platform._handle_score_prompt())
+        alert.send_keys.assert_called_once_with('JoshuaBurgenGax')
+        alert.accept.assert_called_once()
+        self.assertTrue(platform.score_prompt_submitted)
+
+    def test_unrelated_prompt_never_receives_score_name(self):
+        platform = WebPlatform.__new__(WebPlatform)
+        platform.score_name = 'JoshuaBurgenGax'
+        platform.driver = Mock()
+        platform.driver.switch_to.alert.text = 'Enter your password'
+        with self.assertRaisesRegex(RuntimeError, 'Unexpected browser prompt'):
+            platform._handle_score_prompt()
+        platform.driver.switch_to.alert.send_keys.assert_not_called()
+        platform.driver.switch_to.alert.accept.assert_not_called()
+
+    def test_score_submission_is_disabled_without_a_name(self):
+        platform = WebPlatform.__new__(WebPlatform)
+        platform.score_name = None
+        platform.driver = Mock()
+        self.assertFalse(platform._handle_score_prompt())
+        platform.driver.switch_to.alert.send_keys.assert_not_called()
+
+    def test_score_prompt_does_not_replay_click_batch(self):
+        from selenium.common.exceptions import UnexpectedAlertPresentException
+        platform = WebPlatform.__new__(WebPlatform)
+        platform.score_name = 'JoshuaBurgenGax'
+        platform.driver = Mock()
+        platform.driver.execute_script.side_effect = UnexpectedAlertPresentException()
+        platform.driver.switch_to.alert.text = '1 is a new daily high score! Please enter your name'
+        self.assertIsNone(platform._execute_script('click-batch'))
+        platform.driver.execute_script.assert_called_once_with('click-batch')
+        platform.driver.switch_to.alert.send_keys.assert_called_once_with('JoshuaBurgenGax')
+
     @patch('Runner.RunControl')
     @patch('Runner.Board')
     @patch('web_platform.WebPlatform')
@@ -41,12 +142,6 @@ class TestWebPlatform(TestCase):
                 board_type.return_value.play.side_effect = error
                 self.assertEqual(main(['--platform', 'web', '--retry-on-loss', '--delay', '0']), code)
                 platform_type.return_value.reset.assert_not_called()
-
-    def test_desktop_retry_is_rejected(self):
-        from Runner import main
-        with self.assertRaises(SystemExit) as error:
-            main(['--platform', 'arbiter', '--retry-on-loss'])
-        self.assertEqual(error.exception.code, 2)
 
     def test_reset_discards_old_snapshot_and_checks_fresh_board(self):
         platform = WebPlatform.__new__(WebPlatform)

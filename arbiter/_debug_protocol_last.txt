@@ -1,17 +1,19 @@
-21:20:42:907 preferences saved
-21:00:10:501 memory_usage: [21:00] 2147483647 ==> used 0
-21:00:10:500 expert mode selected
-20:59:54:111 ---
-20:59:54:108 who of them got the skills to test me?
-20:59:54:106 ---
-20:59:54:103 warp field stabilized. opening gate to the minesweeper world
-20:59:54:098 encrypt_engine test ok
-20:59:54:093 encrypt_engine testing ...
-20:59:54:089 ---
-20:59:54:085 language  | 00000804
-20:59:54:069 timezone  | 中国标准时间 (GMT +8:00)
-20:59:54:065 platform  | Windows NT 6.2 build 9200, 
-20:59:54:063 memory    | 2047,0 of 2047,0 MB RAM free
-20:59:54:062 cpu speed | run the command get_cpu_speed
-20:59:54:060 date      | Sun, 18.10.2026, process 0x01770180 launched
-20:59:54:036 path      | D:\WORK\GITHUB\MINESWEEPER-ONLINE-SOLVER\ARBITER\
+22:29:11:216 preferences saved
+22:28:23:027 high score replay automatically saved
+22:11:47:949 memory_usage: [22:11] 2147483647 ==> used 0
+22:11:47:944 expert mode selected
+21:21:12:853 intermediate mode selected
+21:21:04:145 ---
+21:21:04:145 who of them got the skills to test me?
+21:21:04:143 ---
+21:21:04:142 warp field stabilized. opening gate to the minesweeper world
+21:21:04:141 encrypt_engine test ok
+21:21:04:139 encrypt_engine testing ...
+21:21:04:138 ---
+21:21:04:137 language  | 00000804
+21:21:04:132 timezone  | 中国标准时间 (GMT +8:00)
+21:21:04:131 platform  | Windows NT 6.2 build 9200, 
+21:21:04:129 memory    | 2047,0 of 2047,0 MB RAM free
+21:21:04:128 cpu speed | run the command get_cpu_speed
+21:21:04:127 date      | Sun, 18.10.2026, process 0x004606E6 launched
+21:21:04:117 path      | D:\WORK\GITHUB\MINESWEEPER-ONLINE-SOLVER\ARBITER\
